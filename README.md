@@ -29,7 +29,7 @@ Designed specifically for IoT messaging architectures, lightweight pub/sub pipel
 Run the setup script directly on your remote server via `curl`:
 
 ```bash
-curl -sO [https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/setup-rabbitmq.sh](https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/setup-rabbitmq.sh)
+curl -sO https://raw.githubusercontent.com/Mikehade/cloud-rabbitmq-mqtt-deployer/main/setup-rabbitmq.sh
 chmod +x setup-rabbitmq.sh
 ./setup-rabbitmq.sh
 
