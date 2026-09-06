@@ -38,8 +38,8 @@ chmod +x setup-rabbitmq.sh
 Alternatively, clone the repository and run it locally:
 
 ```bash
-git clone [https://github.com/YOUR_USERNAME/YOUR_REPO.git](https://github.com/YOUR_USERNAME/YOUR_REPO.git)
-cd YOUR_REPO
+git clone https://github.com/Mikehade/cloud-rabbitmq-mqtt-deployer.git
+cd cloud-rabbitmq-mqtt-deployer
 chmod +x setup-rabbitmq.sh
 ./setup-rabbitmq.sh
 
