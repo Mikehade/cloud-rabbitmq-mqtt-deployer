@@ -79,9 +79,9 @@ echo "[+] Creating enabled_plugins file..."
 cat << EOF > "$RABBIT_DIR/enabled_plugins"
 [rabbitmq_management,rabbitmq_mqtt].
 EOF
-chmod 777 "$RABBIT_DIR/enabled_plugins"
 
-# Fix volume permissions for RabbitMQ internal user (uid 999)
+# chmod first (while ubuntu still owns the file), then hand ownership to rabbitmq
+chmod 644 "$RABBIT_DIR/enabled_plugins"
 echo "[+] Setting directory permissions for RabbitMQ..."
 sudo chown -R 999:999 "$RABBIT_DIR"
 
