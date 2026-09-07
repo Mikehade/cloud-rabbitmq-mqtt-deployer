@@ -16,21 +16,14 @@ if [ -z "$RABBIT_PASS" ]; then
     exit 1
 fi
 
-read -p "Enter your Hostname or Domain Name (e.g., rabbitmq.yourdomain.com or server IP): " RABBIT_HOST
+# Auto-detect Public IP, falling back to local hostname/IP if curl fails
+echo "[+] Auto-detecting server IP / Hostname..."
+RABBIT_HOST=$(curl -s --max-time 3 https://ifconfig.me || curl -s --max-time 3 https://api.ipify.org || hostname -I | awk '{print $1}')
 RABBIT_HOST=${RABBIT_HOST:-localhost}
-
-# Sanitize hostname — strip protocol prefix (http:// or https://) and any trailing path
-RABBIT_HOST=$(echo "$RABBIT_HOST" | sed 's|https\?://||g' | sed 's|/.*||g')
-
-# Validate hostname is not empty after sanitization
-if [ -z "$RABBIT_HOST" ]; then
-    echo "[-] Hostname is empty after sanitization. Please provide a valid IP or domain."
-    exit 1
-fi
 
 echo "--------------------------------------------------"
 echo "Configuration Summary:"
-echo "  - Username:   $RABBIT_USER"
+echo "  - Username:    $RABBIT_USER"
 echo "  - Host/Domain: $RABBIT_HOST"
 echo "--------------------------------------------------"
 
@@ -80,7 +73,6 @@ cat << EOF > "$RABBIT_DIR/enabled_plugins"
 [rabbitmq_management,rabbitmq_mqtt].
 EOF
 
-# chmod first (while ubuntu still owns the file), then hand ownership to rabbitmq
 chmod 644 "$RABBIT_DIR/enabled_plugins"
 echo "[+] Setting directory permissions for RabbitMQ..."
 sudo chown -R 999:999 "$RABBIT_DIR"
@@ -102,11 +94,12 @@ if sudo ss -tlnp | grep -q ":80 "; then
 fi
 
 # 7. Run the RabbitMQ Docker Container
+# Fixed: Hardcode internal container hostname to 'rabbitmq' to avoid Erlang EPMD crashes
 echo "[+] Starting RabbitMQ container..."
 set +e
 sudo docker run -d \
     --restart always \
-    --hostname "$RABBIT_HOST" \
+    --hostname "rabbitmq" \
     -p "$MGMT_PORT:$MGMT_PORT_INTERNAL" \
     -p 1883:1883 \
     -p 443:15671 \
