@@ -100,6 +100,7 @@ sudo docker run -d \
     --restart always \
     --hostname "rabbitmq" \
     -p "$MGMT_PORT:$MGMT_PORT_INTERNAL" \
+    -p 5672:5672 \
     -p 1883:1883 \
     -p 443:15671 \
     -e RABBITMQ_DEFAULT_USER="$RABBIT_USER" \
@@ -114,9 +115,9 @@ set -e
 if [ $DOCKER_EXIT -ne 0 ]; then
     echo ""
     echo "[-] ERROR: Docker failed to start the RabbitMQ container."
-    echo "    This may be due to another port conflict (e.g. 443 or 1883)."
+    echo "    This may be due to another port conflict (e.g. 5672, 443, or 1883)."
     echo "    Run the following to investigate:"
-    echo "      sudo ss -tlnp | grep -E ':443|:1883'"
+    echo "      sudo ss -tlnp | grep -E ':5672|:443|:1883'"
     echo ""
     exit 1
 fi
@@ -155,6 +156,7 @@ if [ "$MGMT_PORT" -eq 15672 ]; then
 else
     echo "      - Port 80   (HTTP / Web Management UI)"
 fi
+echo "      - Port 5672 (AMQP Protocol)"
 echo "      - Port 443  (HTTPS / Secure Web Management UI)"
 echo "      - Port 1883 (MQTT Broker Traffic)"
 echo ""
