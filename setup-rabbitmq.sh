@@ -66,19 +66,14 @@ fi
 
 # 5. Create Persistent Directory & Enabled Plugins File
 echo "[+] Setting up configuration directory at $RABBIT_DIR..."
-mkdir -p "$RABBIT_DIR"
-
-# Temporarily take ownership back so the script can write files safely
-sudo chown -R $USER:$USER "$RABBIT_DIR"
+sudo mkdir -p "$RABBIT_DIR"
 
 echo "[+] Creating enabled_plugins file..."
-cat << EOF > "$RABBIT_DIR/enabled_plugins"
+sudo tee "$RABBIT_DIR/enabled_plugins" > /dev/null << 'EOF'
 [rabbitmq_management,rabbitmq_mqtt].
 EOF
 
-chmod 644 "$RABBIT_DIR/enabled_plugins"
-
-# Hand ownership over to the RabbitMQ container user (UID 999)
+sudo chmod 644 "$RABBIT_DIR/enabled_plugins"
 echo "[+] Setting directory permissions for RabbitMQ..."
 sudo chown -R 999:999 "$RABBIT_DIR"
 
