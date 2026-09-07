@@ -4,22 +4,36 @@ set -e
 echo "=================================================="
 echo "    RabbitMQ & MQTT Automated Setup Script        "
 echo "=================================================="
+
 # 1. Collect inputs from the user
 read -p "Enter RabbitMQ Admin Username (default: admin): " RABBIT_USER
 RABBIT_USER=${RABBIT_USER:-admin}
+
 read -s -p "Enter RabbitMQ Admin Password: " RABBIT_PASS
 echo ""
 if [ -z "$RABBIT_PASS" ]; then
     echo "Password cannot be empty!"
     exit 1
 fi
+
 read -p "Enter your Hostname or Domain Name (e.g., rabbitmq.yourdomain.com or server IP): " RABBIT_HOST
 RABBIT_HOST=${RABBIT_HOST:-localhost}
+
+# Sanitize hostname — strip protocol prefix (http:// or https://) and any trailing path
+RABBIT_HOST=$(echo "$RABBIT_HOST" | sed 's|https\?://||g' | sed 's|/.*||g')
+
+# Validate hostname is not empty after sanitization
+if [ -z "$RABBIT_HOST" ]; then
+    echo "[-] Hostname is empty after sanitization. Please provide a valid IP or domain."
+    exit 1
+fi
+
 echo "--------------------------------------------------"
 echo "Configuration Summary:"
-echo "  - Username: $RABBIT_USER"
+echo "  - Username:   $RABBIT_USER"
 echo "  - Host/Domain: $RABBIT_HOST"
 echo "--------------------------------------------------"
+
 # 2. Check if Docker is installed, install if needed
 if ! command -v docker &> /dev/null; then
     echo "[+] Docker not found. Installing Docker..."
@@ -37,28 +51,44 @@ if ! command -v docker &> /dev/null; then
 else
     echo "[+] Docker is already installed."
 fi
+
 if ! groups $USER | grep &>/dev/null "\bdocker\b"; then
     echo "[+] Adding current user to the docker group..."
     sudo usermod -aG docker $USER
     echo "[!] Note: You may need to log out and back in for non-root docker commands to work. Continuing with sudo for this session..."
 fi
-# 3. Create Persistent Directory & Enabled Plugins File
+
+# 3. Stop and remove any existing rabbitmq container if present
+if [ "$(sudo docker ps -a -q -f name=rabbitmq)" ]; then
+    echo "[+] Removing existing RabbitMQ container..."
+    sudo docker rm -f rabbitmq
+fi
+
+# 4. Clean up any corrupted data from previous failed runs
+if [ -d "$HOME/RabbitMQ/mnesia" ]; then
+    echo "[+] Cleaning up old RabbitMQ data directory..."
+    sudo rm -rf "$HOME/RabbitMQ/mnesia"
+fi
+
+# 5. Create Persistent Directory & Enabled Plugins File
 RABBIT_DIR="$HOME/RabbitMQ"
 echo "[+] Setting up configuration directory at $RABBIT_DIR..."
 mkdir -p "$RABBIT_DIR"
+
 echo "[+] Creating enabled_plugins file..."
 cat << EOF > "$RABBIT_DIR/enabled_plugins"
 [rabbitmq_management,rabbitmq_mqtt].
 EOF
 chmod 777 "$RABBIT_DIR/enabled_plugins"
-# 4. Stop and remove any existing rabbitmq container if present
-if [ "$(sudo docker ps -a -q -f name=rabbitmq)" ]; then
-    echo "[+] Removing existing RabbitMQ container..."
-    sudo docker rm -f rabbitmq
-fi
-# 5. Detect port conflicts and choose Management UI port
+
+# Fix volume permissions for RabbitMQ internal user (uid 999)
+echo "[+] Setting directory permissions for RabbitMQ..."
+sudo chown -R 999:999 "$RABBIT_DIR"
+
+# 6. Detect port conflicts and choose Management UI port
 MGMT_PORT=80
 MGMT_PORT_INTERNAL=15672
+
 if sudo ss -tlnp | grep -q ":80 "; then
     BLOCKING_PROCESS=$(sudo ss -tlnp | grep ":80 " | grep -oP 'users:\(\("\K[^"]+' | head -1)
     echo ""
@@ -70,9 +100,9 @@ if sudo ss -tlnp | grep -q ":80 "; then
     echo ""
     MGMT_PORT=15672
 fi
-# 6. Run the RabbitMQ Docker Container
+
+# 7. Run the RabbitMQ Docker Container
 echo "[+] Starting RabbitMQ container..."
-# Temporarily disable exit-on-error to handle docker failure gracefully
 set +e
 sudo docker run -d \
     --restart always \
@@ -88,7 +118,7 @@ sudo docker run -d \
     rabbitmq:3-management
 DOCKER_EXIT=$?
 set -e
-# 7. If docker run still failed (e.g. port 443 conflict), report clearly
+
 if [ $DOCKER_EXIT -ne 0 ]; then
     echo ""
     echo "[-] ERROR: Docker failed to start the RabbitMQ container."
@@ -98,15 +128,28 @@ if [ $DOCKER_EXIT -ne 0 ]; then
     echo ""
     exit 1
 fi
+
 # 8. Wait for startup completion
 echo "[+] Waiting for RabbitMQ to complete initialization..."
+STARTED=false
 for i in {1..30}; do
     if sudo docker logs rabbitmq 2>&1 | grep -q "Server startup complete"; then
+        STARTED=true
         echo "[+] RabbitMQ started successfully!"
         break
     fi
+    echo "    ...waiting ($i/30)"
     sleep 2
 done
+
+if [ "$STARTED" = false ]; then
+    echo ""
+    echo "[!] WARNING: RabbitMQ did not confirm startup within 60 seconds."
+    echo "    It may still be initializing. Check logs with:"
+    echo "      sudo docker logs rabbitmq"
+    echo ""
+fi
+
 # 9. Print summary
 echo ""
 echo "=================================================="
@@ -118,7 +161,7 @@ echo "    (Firewall / Security Lists) to allow inbound traffic on:"
 if [ "$MGMT_PORT" -eq 15672 ]; then
     echo "      - Port 15672 (RabbitMQ Management UI — fallback, port 80 was taken)"
 else
-    echo "      - Port 80    (HTTP / Web Management UI)"
+    echo "      - Port 80   (HTTP / Web Management UI)"
 fi
 echo "      - Port 443  (HTTPS / Secure Web Management UI)"
 echo "      - Port 1883 (MQTT Broker Traffic)"
