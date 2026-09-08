@@ -93,31 +93,54 @@ if sudo ss -tlnp | grep -q ":80 "; then
     MGMT_PORT=15672
 fi
 
+# Ask whether RabbitMQ HTTPS management should bind directly to host port 443.
+# Default is NO. An empty response also means NO.
+echo ""
+read -p "Do you want RabbitMQ HTTPS Management bound directly to host port 443? [y/N]: " ENABLE_HTTPS
+ENABLE_HTTPS=${ENABLE_HTTPS:-n}
+
+if [[ "$ENABLE_HTTPS" =~ ^[Yy]$ ]]; then
+    BIND_HTTPS=true
+    echo "[+] RabbitMQ HTTPS Management will be exposed on port 443."
+else
+    BIND_HTTPS=false
+    echo "[+] RabbitMQ HTTPS Management will NOT be exposed on port 443."
+    echo "    Nginx can use port 443 instead."
+fi
+
 # 7. Run the RabbitMQ Docker Container
 echo "[+] Starting RabbitMQ container..."
-set +e
-sudo docker run -d \
-    --restart always \
-    --hostname "rabbitmq" \
-    -p "$MGMT_PORT:$MGMT_PORT_INTERNAL" \
-    -p 5672:5672 \
-    -p 1883:1883 \
-    -p 443:15671 \
-    -e RABBITMQ_DEFAULT_USER="$RABBIT_USER" \
-    -e RABBITMQ_DEFAULT_PASS="$RABBIT_PASS" \
-    -v "$RABBIT_DIR/enabled_plugins:/etc/rabbitmq/enabled_plugins" \
-    -v "$RABBIT_DIR:/var/lib/rabbitmq" \
-    --name rabbitmq \
+
+DOCKER_ARGS=(
+    -d
+    --restart always
+    --hostname "rabbitmq"
+    -p "$MGMT_PORT:$MGMT_PORT_INTERNAL"
+    -p 5672:5672
+    -p 1883:1883
+    -e "RABBITMQ_DEFAULT_USER=$RABBIT_USER"
+    -e "RABBITMQ_DEFAULT_PASS=$RABBIT_PASS"
+    -v "$RABBIT_DIR/enabled_plugins:/etc/rabbitmq/enabled_plugins"
+    -v "$RABBIT_DIR:/var/lib/rabbitmq"
+    --name rabbitmq
     rabbitmq:3-management
+)
+
+# Only bind host port 443 to RabbitMQ's HTTPS management port when requested.
+if [ "$BIND_HTTPS" = true ]; then
+    DOCKER_ARGS+=(-p 443:15671)
+fi
+
+set +e
+sudo docker run "${DOCKER_ARGS[@]}"
 DOCKER_EXIT=$?
 set -e
 
 if [ $DOCKER_EXIT -ne 0 ]; then
     echo ""
     echo "[-] ERROR: Docker failed to start the RabbitMQ container."
-    echo "    This may be due to another port conflict (e.g. 5672, 443, or 1883)."
-    echo "    Run the following to investigate:"
-    echo "      sudo ss -tlnp | grep -E ':5672|:443|:1883'"
+    echo "    Check for port conflicts with:"
+    echo "      sudo ss -tlnp | grep -E ':5672|:443|:1883|:15672'"
     echo ""
     exit 1
 fi
@@ -151,21 +174,35 @@ echo "=================================================="
 echo ""
 echo "[!] IMPORTANT: Ensure you have set up Cloud/Server Ingress rules"
 echo "    (Firewall / Security Lists) to allow inbound traffic on:"
+
 if [ "$MGMT_PORT" -eq 15672 ]; then
-    echo "      - Port 15672 (RabbitMQ Management UI — fallback, port 80 was taken)"
+    echo "      - Port 15672 (RabbitMQ Management UI)"
 else
     echo "      - Port 80   (HTTP / Web Management UI)"
 fi
+
 echo "      - Port 5672 (AMQP Protocol)"
-echo "      - Port 443  (HTTPS / Secure Web Management UI)"
 echo "      - Port 1883 (MQTT Broker Traffic)"
+
+if [ "$BIND_HTTPS" = true ]; then
+    echo "      - Port 443  (RabbitMQ HTTPS Management UI)"
+fi
+
 echo ""
 echo "Access your RabbitMQ Dashboard at:"
+
 if [ "$MGMT_PORT" -eq 15672 ]; then
     echo "  -> http://$RABBIT_HOST:15672"
-    echo "     (Port 80 was in use — open port 15672 in your firewall/security group)"
 else
     echo "  -> http://$RABBIT_HOST"
 fi
+
+if [ "$BIND_HTTPS" = true ]; then
+    echo "  -> https://$RABBIT_HOST"
+fi
+
+echo ""
 echo "  -> Username: $RABBIT_USER"
+echo "=================================================="
+
 echo "=================================================="
